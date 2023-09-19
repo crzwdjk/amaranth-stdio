@@ -1,5 +1,6 @@
 from amaranth import *
 from amaranth.lib.cdc import FFSynchronizer
+from amaranth.lib.wiring import *
 from amaranth.lib import data
 from amaranth.utils import bits_for
 
@@ -41,7 +42,7 @@ def _wire_layout(data_bits, parity="none"):
         "stop":   1,
     })
 
-class AsyncSerialRX(Elaboratable):
+class AsyncSerialRX(Component):
     """Asynchronous serial receiver.
 
     Parameters
@@ -79,24 +80,30 @@ class AsyncSerialRX(Elaboratable):
     def __init__(self, *, divisor, divisor_bits=None, data_bits=8, parity="none", pins=None):
         _check_parity(parity)
         self._parity = parity
+        self._data_bits = data_bits
 
         # The clock divisor must be at least 5 to keep the FSM synchronized with the serial input
         # during a DONE->IDLE->BUSY transition.
         _check_divisor(divisor, 5)
         self.divisor = Signal(divisor_bits or bits_for(divisor), reset=divisor)
 
-        self.data = Signal(data_bits)
-        self.err  = Record([
-            ("overflow", 1),
-            ("frame",    1),
-            ("parity",   1),
-        ])
-        self.rdy  = Signal()
-        self.ack  = Signal()
-
-        self.i    = Signal(reset=1)
-
         self._pins = pins
+
+        super().__init__()
+
+    @property
+    def signature(self):
+        return Signature({
+            "data": Out(self._data_bits),
+            "rdy": Out(1),
+            "ack": In(1),
+            "err": Out(Signature({
+                "overflow": Out(1),
+                "frame":    Out(1),
+                "parity":   Out(1),
+            })),
+            "i": In(1, reset = 1),
+        })
 
     def elaborate(self, platform):
         m = Module()
@@ -146,7 +153,7 @@ class AsyncSerialRX(Elaboratable):
         return m
 
 
-class AsyncSerialTX(Elaboratable):
+class AsyncSerialTX(Component):
     """Asynchronous serial transmitter.
 
     Parameters
@@ -178,17 +185,23 @@ class AsyncSerialTX(Elaboratable):
     def __init__(self, *, divisor, divisor_bits=None, data_bits=8, parity="none", pins=None):
         _check_parity(parity)
         self._parity = parity
+        self._data_bits = data_bits
 
         _check_divisor(divisor, 1)
         self.divisor = Signal(divisor_bits or bits_for(divisor), reset=divisor)
 
-        self.data = Signal(data_bits)
-        self.rdy  = Signal()
-        self.ack  = Signal()
-
-        self.o    = Signal(reset=1)
-
         self._pins = pins
+
+        super().__init__()
+
+    @property
+    def signature(self):
+        return Signature({
+            "data": In(self._data_bits),
+            "rdy":  In(1),
+            "ack":  Out(1),
+            "o":    Out(1, reset=1),
+        })
 
     def elaborate(self, platform):
         m = Module()
