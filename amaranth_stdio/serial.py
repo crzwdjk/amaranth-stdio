@@ -1,5 +1,6 @@
 from amaranth import *
 from amaranth.lib.cdc import FFSynchronizer
+from amaranth.lib import data
 from amaranth.utils import bits_for
 
 
@@ -32,15 +33,13 @@ def _compute_parity_bit(data, parity):
         return ~data.xor()
     assert False
 
-
 def _wire_layout(data_bits, parity="none"):
-    return [
-        ("start",  1),
-        ("data",   data_bits),
-        ("parity", 0 if parity == "none" else 1),
-        ("stop",   1),
-    ]
-
+    return data.StructLayout({
+        "start":  1,
+        "data":   data_bits,
+        "parity": 0 if parity == "none" else 1,
+        "stop":   1,
+    })
 
 class AsyncSerialRX(Elaboratable):
     """Asynchronous serial receiver.
@@ -103,8 +102,8 @@ class AsyncSerialRX(Elaboratable):
         m = Module()
 
         timer = Signal.like(self.divisor)
-        shreg = Record(_wire_layout(len(self.data), self._parity))
-        bitno = Signal(range(len(shreg)))
+        shreg = Signal(_wire_layout(len(self.data), self._parity))
+        bitno = Signal(range(shreg.shape().size))
 
         if self._pins is not None:
             m.submodules += FFSynchronizer(self._pins.rx.i, self.i, reset=1)
@@ -113,7 +112,7 @@ class AsyncSerialRX(Elaboratable):
             with m.State("IDLE"):
                 with m.If(~self.i):
                     m.d.sync += [
-                        bitno.eq(len(shreg) - 1),
+                        bitno.eq(shreg.shape().size - 1),
                         timer.eq(self.divisor >> 1),
                     ]
                     m.next = "BUSY"
@@ -123,7 +122,7 @@ class AsyncSerialRX(Elaboratable):
                     m.d.sync += timer.eq(timer - 1)
                 with m.Else():
                     m.d.sync += [
-                        shreg.eq(Cat(shreg[1:], self.i)),
+                        shreg.eq(Cat(shreg.as_value()[1:], self.i)),
                         bitno.eq(bitno - 1),
                         timer.eq(self.divisor - 1),
                     ]
@@ -195,8 +194,8 @@ class AsyncSerialTX(Elaboratable):
         m = Module()
 
         timer = Signal.like(self.divisor)
-        shreg = Record(_wire_layout(len(self.data), self._parity))
-        bitno = Signal(range(len(shreg)))
+        shreg = Signal(_wire_layout(len(self.data), self._parity))
+        bitno = Signal(range(shreg.shape().size))
 
         if self._pins is not None:
             m.d.comb += self._pins.tx.o.eq(self.o)
@@ -210,7 +209,7 @@ class AsyncSerialTX(Elaboratable):
                         shreg.data  .eq(self.data),
                         shreg.parity.eq(_compute_parity_bit(self.data, self._parity)),
                         shreg.stop  .eq(1),
-                        bitno.eq(len(shreg) - 1),
+                        bitno.eq(shreg.shape().size - 1),
                         timer.eq(self.divisor - 1),
                     ]
                     m.next = "BUSY"
